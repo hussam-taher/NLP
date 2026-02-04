@@ -1,0 +1,11 @@
+﻿.venv/
+results_pack/
+__pycache__/
+*.pyc
+
+# لا ترفع ملفات التدريب الضخمة
+**/checkpoint-*/
+**/*.safetensors
+**/optimizer.pt
+**/scheduler.pt
+**/rng_state.pth

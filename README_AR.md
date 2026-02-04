@@ -1,303 +1,268 @@
 # مشروع تصنيف النصوص (IMDb Sentiment Classification) باستخدام Transformers
-<!-- تم تكييف هذا الكود من مثال Hugging Face Transformers (run_glue.py)، وتم تعديله لتصنيف المشاعر على بيانات IMDb، مع إضافة مقاييس تقييم إضافية وتسجيل النتائج. -->
-هذا المشروع يطبّق **تصنيف النصوص (Text Classification)** على بيانات **IMDb** (مراجعات أفلام) لتحديد ما إذا كانت المراجعة **إيجابية** أو **سلبية** (تصنيف ثنائي).
 
-السكربت الرئيسي في هذا المشروع هو:
+> هذا الدليل موجّه لك كطالب/منفّذ للمشروع: يشرح **ماذا فعلنا** خطوة بخطوة، وكيف تشغّل التجارب بنفسك، وأين تجد **ملفات النتائج** بسرعة.
+> **تنبيه مهم (اقتباس/تكييف الكود):** تم تكييف هذا المشروع من مثال Hugging Face Transformers `run_glue.py`، ثم عُدّل ليصبح مناسبًا لتصنيف المشاعر على IMDb، مع إضافة مقاييس إضافية وحفظ النتائج.
 
+<!--
+تم تكييف هذا المشروع من مثال Hugging Face Transformers (run_glue.py)، ثم عُدّل ليصبح مناسبًا لتصنيف المشاعر على IMDb،
+مع إضافة: تقسيم Validation، الإيقاف المبكر Early Stopping، مقاييس إضافية، وحفظ النتائج (JSON/CSV).
+-->
+
+---
+
+## 1) فكرة المشروع باختصار
+نقوم بتطبيق **تصنيف النصوص (Text Classification)** على بيانات **IMDb** (مراجعات أفلام) لتحديد ما إذا كانت المراجعة:
+- **0 = سلبية (Negative)**
+- **1 = إيجابية (Positive)**
+
+السكربت الرئيسي الذي نفّذنا به كل شيء هو:
 - `imdb_train.py`
 
 ---
 
-## 1) المتطلبات (Requirements)
+## 2) بيئة العمل والمتطلبات
 
-### بيئة التشغيل
+### 2.1 بيئة التشغيل
 - Python 3.9+ (يفضّل 3.10 أو 3.11)
-- يفضّل تشغيله داخل Virtual Environment (`.venv`)
+- يفضّل تشغيل المشروع داخل Virtual Environment (`.venv`)
 
-### المكتبات المستخدمة (Libraries)
-> هذه هي أهم المكتبات ولماذا استخدمناها داخل الكود:
-
+### 2.2 أهم المكتبات ولماذا نستخدمها
 - **transformers**  
-  لتجهيز الموديل والتوكنيزر (Tokenizer) والتدريب باستخدام `Trainer` و`TrainingArguments`، وأيضًا إضافة `EarlyStoppingCallback`.
+  لتحميل الموديل والـ Tokenizer، وإدارة التدريب عبر `Trainer` و`TrainingArguments`، وتفعيل `EarlyStoppingCallback`.
 
 - **datasets**  
   لتحميل بيانات IMDb مباشرة باستخدام: `load_dataset("imdb")`، وكذلك عمل تقسيم Train/Validation.
 
+- **torch (PyTorch)**  
+  هو محرك التدريب الفعلي (backprop + تحديث الأوزان).  
+  > ملاحظة: `Trainer` من transformers يبني فوق PyTorch.
+
 - **numpy**  
-  لتحويل logits إلى توقعات باستخدام `argmax` وللتعامل مع arrays.
+  للتعامل مع المصفوفات وتحويل logits إلى توقعات بـ `argmax`.
 
 - **scikit-learn (sklearn.metrics)**  
-  لحساب مؤشرات الأداء: Accuracy و Precision و Recall و F1، بالإضافة إلى Confusion Matrix.
+  لحساب: Accuracy و Precision و Recall و F1، وكذلك Confusion Matrix.
 
 - **argparse**  
-  لتشغيل السكربت بإعدادات مختلفة من سطر الأوامر (مثل اختيار موديل أو تغيير batch size).
+  لتغيير الإعدادات من سطر الأوامر (اختيار موديل، batch size، طول النص...).
 
 - **json / csv / pathlib.Path**  
   لحفظ النتائج في ملفات (JSON/CSV) وإنشاء مجلدات الإخراج تلقائيًا.
 
 ---
 
-## 2) كيف تعمل الداتا؟ وكيف يحملها الكود؟
+## 3) البيانات: كيف نحصل على IMDb؟
+نستخدم مكتبة `datasets` ونحمّل الداتا بهذا السطر داخل الكود:
 
-### تحميل بيانات IMDb
-الكود يستخدم:
 - `raw = load_dataset("imdb")`
 
 وهذا يقوم تلقائيًا بـ:
-- تنزيل البيانات من Hugging Face Datasets (أول مرة فقط)
-- تخزينها في cache محلي
-- توفير splits جاهزة:
-  - `raw["train"]`
-  - `raw["test"]`
+1) تنزيل البيانات (أول مرة فقط)
+2) تخزينها في cache
+3) إعطائك Splits جاهزة:
+   - `raw["train"]`
+   - `raw["test"]`
 
-### إنشاء Validation Split
-لأن Early Stopping يحتاج **Validation**، الكود يأخذ `train` ويقسمه إلى:
+> ملاحظة مهمة: الـ dataset تأتي من Hugging Face Datasets (مصدر خارجي)، لكن طريقة التحميل سهلة ومباشرة عبر `load_dataset`.
+
+---
+
+## 4) ما الذي يحدث داخل الكود؟ (شرح عملي موجّه لك)
+السكريبت يمشي بهذا التسلسل (هذا أهم ما تحتاجه لفهم التنفيذ):
+
+### 4.1 تقسيم Train / Validation
+لأن **Early Stopping** يحتاج مجموعة Validation، قمنا بتقسيم `train` إلى:
 - Train
 - Validation
 
 باستخدام:
 - `train_test_split(test_size=val_ratio, seed=seed, shuffle=True)`
 
-> `val_ratio` افتراضيًا 0.1 (أي 10% من train تصبح validation).
+والافتراضي:
+- `val_ratio = 0.1` (أي 10% من train تصبح validation)
 
----
-
-## 3) شرح السكربت: ماذا يفعل خطوة بخطوة؟
-
-> ملاحظة: الشرح هنا يتبع ترتيب الكود كما هو داخل `imdb_train_with_val_earlystop.py`.
-
-### (A) التعليقات أعلى الملف
-في بداية الملف توجد تعليقات تشرح أن السكربت:
-- مخصص لـ IMDb فقط
-- يضيف train/validation split
-- يضيف Early Stopping
-- يحفظ Confusion Matrix + أمثلة misclassified
-- يكتب summary.csv للتجارب بسرعة
-
-### (B) الاستيرادات Imports
-يتم استيراد كل المكتبات المطلوبة:
-- من بايثون: `argparse, csv, json, time, dataclass, Path`
-- من خارج بايثون: `numpy, datasets, sklearn.metrics, transformers`
-
-### (C) كلاس الإعدادات RunConfig
-يتم تعريف `RunConfig` باستخدام `@dataclass` لتجميع كل إعدادات التشغيل في كائن واحد مثل:
-- `model_name` اسم الموديل (DistilBERT افتراضيًا)
-- `max_seq_length` طول النص بعد tokenization
-- `batch sizes`, `learning rate`, `epochs`
-- `val_ratio` نسبة الـ validation
-- `early_stopping_patience` عدد epochs بدون تحسن قبل الإيقاف
-- `dropout` (اختياري لتجارب dropout)
-
-الفائدة: بدل ما تكون الإعدادات متفرقة، تصبح منظمة وسهلة التخزين ضمن النتائج.
-
-### (D) parse_args() — قراءة إعدادات التشغيل من سطر الأوامر
-الدالة:
-- تنشئ `ArgumentParser`
-- تضيف arguments مثل:
-  - `--model_name`
-  - `--max_seq_length`
-  - `--train_batch_size`, `--eval_batch_size`
-  - `--learning_rate`, `--num_train_epochs`
-  - `--val_ratio`
-  - `--early_stopping_patience`
-  - `--dropout` (اختياري)
-- ثم ترجع `RunConfig` يحتوي القيم كلها.
-
-### (E) compute_metrics() — حساب المقاييس أثناء التقييم
-الدالة تستقبل:
-- `logits` (ناتج الموديل)
-- `labels` (القيم الصحيحة)
-
-ثم:
-1) تحول logits إلى توقعات:
-   - `preds = argmax(logits)`
-2) تحسب:
-   - Accuracy
-   - Precision / Recall / F1 (للـ binary classification)
-3) ترجع قاموس metrics ليستخدمه `Trainer`.
-
-### (F) ensure_dirs() — إنشاء مجلدات الإخراج تلقائيًا
-هذه الدالة تضمن وجود مجلدين:
-- `outputs/<run_name>/`
-- `results/`
-
-إذا لم تكن موجودة، يتم إنشاؤها تلقائيًا.
-
-
-### (G) دوال حفظ النتائج (JSON/CSV)
-يوجد عدة دوال صغيرة للحفظ:
-- `save_json(...)` لحفظ metrics في JSON
-- `save_confusion_matrix_csv(...)` لحفظ confusion matrix
-- `save_misclassified_csv(...)` لحفظ أمثلة تم تصنيفها خطأ
-- `append_summary_csv(...)` لإضافة ملخص تجربة في `results/summary.csv`
-
-### (H) override_dropout_if_requested() — (اختياري)
-هذه الدالة:
-- لا تعمل إلا إذا أعطيت `--dropout`
-- تحاول تعديل قيم dropout في `model.config` حسب نوع الموديل (BERT أو DistilBERT)
-- الهدف: السماح بتجربة dropout بشكل صريح لو تريد مقارنة.
-
-> مهم: حتى لو لم تستخدم `--dropout`، فـ Transformers فيها dropout افتراضي داخل المعمارية.
-
----
-
-## 4) main(): أين يبدأ العمل الحقيقي؟
-
-### الخطوة 1: قراءة الإعدادات وإنشاء المجلدات
-- قراءة config عبر `parse_args()`
-- إنشاء المجلدات عبر `ensure_dirs()`
-- تثبيت الـ seed عبر `set_seed(seed)`
-
-### الخطوة 2: تحميل IMDb وتقسيم Train/Val
-- `load_dataset("imdb")`
-- `base_train = raw["train"]`
-- `test_ds = raw["test"]`
-- ثم تقسيم base_train إلى train/val باستخدام `train_test_split(...)`
-
-### الخطوة 3: تحميل Tokenizer و Tokenization
+### 4.2 Tokenization وتجهيز النصوص
+نحمّل Tokenizer مطابق للموديل:
 - `AutoTokenizer.from_pretrained(model_name, use_fast=True)`
 
-ثم تعريف `tokenize_fn` لتطبيق:
-- truncation
-- max_length
+ثم نطبّق:
+- `truncation=True`
+- `max_length=max_seq_length`
 
-ثم تطبيقه على:
-- train
-- val
-- test
+بعدها نستخدم `map(...)` لتطبيق التحويل على:
+- train / val / test
 
-باستخدام:
-- `dataset.map(tokenize_fn, batched=True, remove_columns=...)`
-
-> remove_columns يحذف الأعمدة غير المطلوبة بعد tokenization لتكون البيانات جاهزة لـ Trainer.
-
-### الخطوة 4: تحويل عمود label إلى labels
-`Trainer` يتوقع اسم العمود:
-- `labels`
-
-لكن IMDb يعطي:
-- `label`
-
-لذلك يتم إعادة التسمية:
-- `rename_column("label", "labels")`
-
-### الخطوة 5: إعداد DataCollator
+### 4.3 Padding (تجهيز الدُفعات Batches)
+بدل ما نسوي padding ثابت من البداية، استخدمنا:
 - `DataCollatorWithPadding(tokenizer=tokenizer)`
 
-وظيفته:
-- عمل padding ديناميكي لكل batch بدل padding ثابت.
+هذا يسوي padding ديناميكي لكل batch أثناء التدريب والتقييم.
 
-### الخطوة 6: تحميل الموديل
+### 4.4 تحميل الموديل (Model)
+نستخدم:
 - `AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)`
 
-`num_labels=2` لأن المهمة Binary (positive/negative).
+لأنها مهمة ثنائية (0/1).
 
-ثم (اختياري):
-- تعديل dropout إذا `--dropout` موجود.
-
-### الخطوة 7: إعداد TrainingArguments
-هنا نحدد أهم إعدادات التدريب:
-- learning_rate
-- batch sizes
-- num_train_epochs (ويمكن أن يتوقف قبلها بسبب early stopping)
-- evaluation_strategy="epoch"
-- save_strategy="epoch"
-- load_best_model_at_end=True
-- metric_for_best_model="f1"
-- save_total_limit=2
-- logging_steps=50
-- report_to="none" (لا يستخدم wandb)
-
-**ملاحظة مهمّة:**  
-التقييم أثناء التدريب يتم على **Validation**، وليس Test.  
-والـ Test يبقى للتقييم النهائي.
-
-### الخطوة 8: إنشاء Trainer مع EarlyStoppingCallback
-يتم إنشاء:
+### 4.5 التدريب (Training) والتقييم (Evaluation)
+نضبط التدريب عبر `TrainingArguments` (مثل learning rate / batch size / epochs ...)، ثم ننشئ:
 - `Trainer(...)`
 
-ويُمرر له:
-- model
-- args
-- train_dataset
-- eval_dataset (validation)
-- tokenizer
-- data_collator
-- compute_metrics
-- callbacks = [EarlyStoppingCallback(...)]
-
-**EarlyStoppingCallback**
-- يوقف التدريب إذا لم يتحسن val_f1 لمدة (patience) epochs.
-
-### الخطوة 9: التدريب
-- `trainer.train()`
-
-ويتم قياس وقت التدريب بـ:
-- `time.time()` قبل وبعد.
-
-### الخطوة 10: الحفظ + التقييم
-بعد التدريب:
-- حفظ الموديل والتوكنيزر داخل `outputs/<run_name>/`
-
-ثم:
-- تقييم على Validation (للشفافية)
-- تقييم نهائي على Test (هذه هي النتائج التي تكتبها في التقرير)
-
-ويتم حفظ كل شيء في:
-- `outputs/<run_name>/metrics.json`
-
-### الخطوة 11: تحليل النتائج (Confusion Matrix + Misclassified)
-بعد التقييم:
-- `trainer.predict(test_tok)` لإخراج logits
-- تحويلها إلى y_pred باستخدام argmax
-- حساب confusion matrix وحفظها
-- استخراج أمثلة misclassified وحفظها في CSV
-
-### الخطوة 12: summary.csv للتجارب
-في النهاية يتم إضافة سطر في:
-- `results/summary.csv`
-
-لكي تجمع نتائج كل التجارب بسهولة (run_name، model، lr، f1، الوقت…).
+وأخيرًا:
+- `trainer.train()`  → يبدأ التدريب
+- `trainer.evaluate(val)` → تقييم على validation أثناء التدريب
+- `trainer.evaluate(test)` / `trainer.predict(test)` → تقييم نهائي على test + استخراج التوقعات
 
 ---
 
-## 5) الملفات التي تُنتج تلقائيًا (Outputs)
+## 5) المفاهيم الأربعة المطلوبة: أين تظهر في مشروعنا؟
+هذه المفاهيم الأربعة ظهرت بشكل عملي داخل التدريب:
 
-بعد تشغيل السكربت، سيتم إنشاء:
+1) **Iteration (تحديث واحد للوزن)**  
+   كل Batch يمر بـ forward → loss → backward → تحديث الأوزان. هذا يحدث تلقائيًا داخل `Trainer`.
+
+2) **Batch**  
+   تتحكم فيها من سطر الأوامر:
+   - `--train_batch_size`
+   - `--eval_batch_size`
+
+3) **Early Stopping**  
+   مطبق عبر:
+   - `EarlyStoppingCallback(...)`  
+   ويوقف التدريب إذا لم يتحسن أداء validation (حسب F1) لعدد epochs محدد.
+
+4) **Dropout**  
+   موجود تلقائيًا داخل معماريات BERT/DistilBERT.  
+   ويمكنك (اختياريًا) تجربته صراحة عبر:
+   - `--dropout 0.2`  
+   لكن في تجاربنا الحالية تركناه على الافتراضي (dropout = null في config).
+
+---
+
+## 6) التجارب التي نفّذناها (Run1 وRun2) + النتائج
+قمنا بتجربتين أساسيتين لمقارنة نموذج خفيف مقابل نموذج أكبر:
+
+### 6.1 التجربة الأولى: DistilBERT (run1_distilbert)
+- الموديل: `distilbert-base-uncased`
+- max_seq_length = 256
+- train_batch_size = 16
+- eval_batch_size = 32
+- learning_rate = 2e-5
+- weight_decay = 0.01
+- val_ratio = 0.1
+- early_stopping_patience = 2
+
+**نتائج Validation**
+- Accuracy = 0.9092
+- F1 = 0.90996
+
+**نتائج Test**
+- Accuracy = 0.9132
+- Precision = 0.90163
+- Recall = 0.9276
+- F1 = 0.91443
+- زمن التدريب ≈ 2486 ثانية
+
+### 6.2 التجربة الثانية: BERT (run2_bert)
+- الموديل: `bert-base-uncased`
+- max_seq_length = 256
+- train_batch_size = 8
+- eval_batch_size = 16
+- learning_rate = 2e-5
+- weight_decay = 0.01
+- val_ratio = 0.1
+- early_stopping_patience = 2
+
+**نتائج Validation**
+- Accuracy = 0.9112
+- F1 = 0.91183
+
+**نتائج Test**
+- Accuracy = 0.91652
+- Precision = 0.90967
+- Recall = 0.92488
+- F1 = 0.91721
+- زمن التدريب ≈ 4187 ثانية
+
+### 6.3 جدول مقارنة سريع (الأهم في التقرير)
+| التجربة | الموديل | Test Accuracy | Test F1 | Train Time (sec) |
+|---|---|---:|---:|---:|
+| run1_distilbert | distilbert-base-uncased | 0.9132 | 0.9144 | 2486 |
+| run2_bert | bert-base-uncased | 0.9165 | 0.9172 | 4187 |
+
+**ملاحظة تفسيرية للقارئ:**  
+BERT أعطى تحسنًا بسيطًا في الدقة وF1 مقارنة بـ DistilBERT، لكن زمن التدريب كان أعلى لأن النموذج أكبر.
+
+---
+
+## 7) Confusion Matrix (تحليل أخطاء) — مثال من DistilBERT
+قمنا بحفظ مصفوفة الالتباس لتفسير الأخطاء. مثال (DistilBERT على test):
+
+- true_0 → pred_0 = 11235  (سالب صحيح)
+- true_0 → pred_1 = 1265   (False Positive)
+- true_1 → pred_0 = 905    (False Negative)
+- true_1 → pred_1 = 11595  (موجب صحيح)
+
+**كيف تقرأها؟**
+- النموذج جيد في اكتشاف الإيجابي (Recall مرتفع)، لكنه أحيانًا يصنّف بعض المراجعات السلبية كإيجابية (FP).
+
+---
+
+## 8) الملفات التي تُنتَج تلقائيًا وأين تجدها؟
+بعد تشغيل أي تجربة، يتم إنشاء:
 
 داخل `outputs/<run_name>/`:
 - `metrics.json`  (نتائج val + test + config)
 - `confusion_matrix.csv`
-- `misclassified.csv`
-- ملفات الموديل (weights/config/tokenizer files)
+- `misclassified.csv` (اختياري: أمثلة أخطاء)
+- ملفات الموديل والتوكنيزر
 
 داخل `results/`:
-- `summary.csv` (ملخص كل Run)
+- `summary.csv` (ملخص سريع لكل التجارب)
+
+> أنت لا تحتاج لإنشاء هذه الملفات يدويًا: الكود ينشئها تلقائيًا.
 
 ---
 
-## 6) طريقة التشغيل (Commands)
+## 9) طريقة التشغيل (Commands)
 
-### تشغيل Baseline (dropout الافتراضي للموديل)
+### 9.1 تشغيل DistilBERT
 ```powershell
-.\.venv\Scripts\python.exe imdb_train.py --run_name imdb_base
+.\.venv\Scripts\python.exe imdb_train.py ^
+  --run_name run1_distilbert ^
+  --model_name distilbert-base-uncased ^
+  --max_seq_length 256 ^
+  --train_batch_size 16 ^
+  --eval_batch_size 32 ^
+  --learning_rate 2e-5 ^
+  --num_train_epochs 5 ^
+  --val_ratio 0.1 ^
+  --early_stopping_patience 2
 ```
 
-### تجربة dropout=0.2 (اختياري)
+### 9.2 تشغيل BERT
 ```powershell
-.\.venv\Scripts\python.exe imdb_train.py --run_name imdb_drop02 --dropout 0.2
+.\.venv\Scripts\python.exe imdb_train.py ^
+  --run_name run2_bert ^
+  --model_name bert-base-uncased ^
+  --max_seq_length 256 ^
+  --train_batch_size 8 ^
+  --eval_batch_size 16 ^
+  --learning_rate 2e-5 ^
+  --num_train_epochs 5 ^
+  --val_ratio 0.1 ^
+  --early_stopping_patience 2
 ```
 
-### تغيير نموذج إلى BERT
+### 9.3 اختبار سريع (Smoke Test) للتأكد أن كل شيء يعمل
 ```powershell
-.\.venv\Scripts\python.exe imdb_train.py --run_name imdb_bert --model_name bert-base-uncased
+.\.venv\Scripts\python.exe imdb_train.py ^
+  --run_name smoke_test ^
+  --model_name distilbert-base-uncased ^
+  --max_seq_length 128 ^
+  --train_batch_size 8 ^
+  --eval_batch_size 16 ^
+  --num_train_epochs 1 ^
+  --val_ratio 0.1 ^
+  --early_stopping_patience 1
 ```
-
----
-
-## 7) ملاحظات مهمة للتقرير
-
-- **Iteration**: يحدث تحديث للأوزان لكل batch داخل Trainer (forward → loss → backward → update).
-- **Batch**: يتم التحكم به عبر `train_batch_size`.
-- **Early Stopping**: مطبق باستخدام `EarlyStoppingCallback` وعلى validation F1.
-- **Dropout**: موجود داخل Transformers افتراضيًا، ويمكن تجربته صراحة عبر `--dropout` إن رغبت.
