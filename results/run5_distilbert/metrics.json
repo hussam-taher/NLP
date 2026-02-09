@@ -1,0 +1,32 @@
+{
+  "val": {
+    "loss": 0.34782224893569946,
+    "accuracy": 0.9244,
+    "precision": 0.9327390599675851,
+    "recall": 0.9156722354813047,
+    "f1": 0.9241268566840626
+  },
+  "test": {
+    "loss": 0.2944525480270386,
+    "accuracy": 0.93104,
+    "precision": 0.931454196028187,
+    "recall": 0.93056,
+    "f1": 0.931006883303986
+  },
+  "train_time_sec": 3294.265546321869,
+  "config": {
+    "model_name": "distilbert-base-uncased",
+    "max_seq_length": 512,
+    "train_batch_size": 16,
+    "eval_batch_size": 32,
+    "learning_rate": 2e-05,
+    "num_train_epochs": 5.0,
+    "weight_decay": 0.01,
+    "seed": 42,
+    "val_ratio": 0.1,
+    "early_stopping_patience": 2,
+    "early_stopping_threshold": 0.0,
+    "dropout": null,
+    "run_name": "run5_distilbert"
+  }
+}

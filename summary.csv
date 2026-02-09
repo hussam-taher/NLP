@@ -1,2 +1,3 @@
 run_name,model,max_seq_length,train_bs,eval_bs,lr,epochs_max,val_ratio,early_stop_patience,dropout,val_f1,test_accuracy,test_f1,train_time_sec,output_dir
 run3_distilbert_dropout02,distilbert-base-uncased,512,16,32,2e-05,5.0,0.1,2,0.2,0.9225933202357564,0.92788,0.9295840656121851,5352.436454534531,outputs/run3_distilbert_dropout02
+run5_distilbert,distilbert-base-uncased,512,16,32,2e-05,5.0,0.1,2,,0.9241268566840626,0.93104,0.931006883303986,3294.265546321869,outputs/run5_distilbert
