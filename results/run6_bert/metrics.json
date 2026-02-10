@@ -1,0 +1,32 @@
+{
+  "val": {
+    "loss": 0.36321356892585754,
+    "accuracy": 0.9372,
+    "precision": 0.9378980891719745,
+    "recall": 0.9371519490851233,
+    "f1": 0.937524870672503
+  },
+  "test": {
+    "loss": 0.3773594796657562,
+    "accuracy": 0.93608,
+    "precision": 0.9302968108620145,
+    "recall": 0.9428,
+    "f1": 0.9365066751430388
+  },
+  "train_time_sec": 7165.4909818172455,
+  "config": {
+    "model_name": "bert-base-uncased",
+    "max_seq_length": 512,
+    "train_batch_size": 8,
+    "eval_batch_size": 16,
+    "learning_rate": 2e-05,
+    "num_train_epochs": 5.0,
+    "weight_decay": 0.01,
+    "seed": 42,
+    "val_ratio": 0.1,
+    "early_stopping_patience": 2,
+    "early_stopping_threshold": 0.0,
+    "dropout": null,
+    "run_name": "run6_bert"
+  }
+}
