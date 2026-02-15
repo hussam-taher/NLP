@@ -1,203 +1,263 @@
 # IMDb Sentiment Classification Project Using Transformers
 
-> This guide is for you: It explains **what we did** step by step, how to run the experiments yourself, and where to quickly find **results files**.
+> This guide explains **what we did** step by step, how to reproduce the experiments, and where to find **the saved result files**.
 
-> **Important Note (Code Adaptation):** This project was adapted from the Hugging Face Transformers example `run_glue.py`, then modified to be suitable for IMDb Sentiment Classification, with the addition of extra metrics and results saving.
-
-<!-- This project was adapted from the Hugging Face Transformers example (run_glue.py), then modified to be suitable for IMDb Sentiment Classification,
-with the addition of: Validation Split, Early Stopping, extra metrics, and results saving (JSON/CSV).
-
--->
+> **Important Note (Code Adaptation):** This project was adapted from the Hugging Face Transformers example `run_glue.py`, then modified to fit IMDb sentiment classification, with validation splitting, early stopping, extra metrics, and results saving (JSON/CSV).
 
 ---
 
 ## 1) Project Overview
-We apply Text Classification to IMDb data (movie reviews) to determine if a review is:
+We apply **binary text classification** to IMDb movie reviews to predict sentiment:
 - **0 = Negative**
 - **1 = Positive**
 
-The main script we used is:
+Main script:
 - `imdb_train.py`
+
+Models compared (final report):
+- `bert-base-uncased`
+- `distilbert-base-uncased`
+
+We also tested **dropout** as an experimental factor:
+- default dropout (null)
+- dropout = 0.2
 
 ---
 
 ## 2) Environment and Requirements
 
 ### 2.1 Running Environment
-- Python 3.9+ (3.10 or 3.11 recommended)
-- It is recommended to run the project in a Virtual Environment (`.venv`)
+- Python 3.9+ (3.10/3.11 recommended)
+- Use a virtual environment (`.venv`) to avoid dependency conflicts.
 
-### 2.2 Key Libraries and Why We Use Them
-- **transformers**
+### 2.2 Main Libraries
+- **transformers**  
+  Load models/tokenizers, run training with `Trainer`, use `TrainingArguments`, enable `EarlyStoppingCallback`.
 
-For loading the model and tokenizer, managing training via `Trainer` and `TrainingArguments`, and enabling `EarlyStoppingCallback`.
+- **datasets**  
+  Load IMDb using `load_dataset("imdb")`, and create a validation split.
 
-- **datasets**
+- **torch (PyTorch)**  
+  Training backend for forward/backward passes and optimization.
 
-To load IMDb data directly using: `load_dataset("imdb")`, and also perform Train/Validation splitting.
+- **numpy**  
+  Utility operations for arrays/predictions.
 
-- **torch (PyTorch)**
+- **scikit-learn (sklearn.metrics)**  
+  Compute Accuracy / Precision / Recall / F1 and Confusion Matrix.
 
-The actual training engine (backprop + weight update).
+- **argparse**  
+  Configure experiments via command line (model, batch size, max length, dropout, etc.).
 
-> Note: `Trainer` from transformers builds on top of PyTorch.
-
-- **numpy**
-
-For handling matrices and converting logits to predictions using `argmax`.
-
-- **scikit-learn (sklearn.metrics)**
-
-For calculating: Accuracy, Precision, Recall, F1, and Confusion Matrix.
-
-- **argparse**
-
-To change settings from the command line (model selection, batch size, text length, etc.).
-
-- **json/csv/pathlib.Path**
-
-To save results to JSON/CSV files and automatically create output folders.
+- **json / csv / pathlib.Path**  
+  Save outputs to structured folders (metrics, confusion matrix, misclassified samples, summary).
 
 ---
 
-## 3) Data: How do we get IMDb?
-
-We use the `datasets` library and load the data with this line of code:
+## 3) Dataset: IMDb (Hugging Face)
+We load IMDb via Hugging Face Datasets:
 
 - `raw = load_dataset("imdb")`
 
-This automatically:
-
-1) Downloads the data (only the first time)
-
-2) Stores it in a cache
-
-3) Gives you ready-made splits:
-
+This provides ready-made splits:
 - `raw["train"]`
-
 - `raw["test"]`
 
-> Important note: The dataset comes from Hugging Face Datasets (an external source), but the loading method is easy and direct via `load_dataset`.
+Dataset reference:
+- https://huggingface.co/datasets/stanfordnlp/imdb
 
 ---
 
-## 4) What happens inside the code?
+## 4) What happens inside the code? (Pipeline)
 
-The script works in this sequence:
-
-### 4.1 Splitting Train/Validation
-Because **Early Stopping** requires a Validation set, we split `train` into:
-
+### 4.1 Train/Validation split
+Because **Early Stopping** needs a validation set, we split the original train split into:
 - Train
 - Validation
 
 Using:
-
 - `train_test_split(test_size=val_ratio, seed=seed, shuffle=True)`
 
-The default is:
+Default:
+- `val_ratio = 0.1` (10% of train is used for validation)
 
-- `val_ratio = 0.1` (i.e., 10% of the train becomes validation)
-
-### 4.2 Tokenization and Script Preparation
-We load a tokenizer that matches the model:
-
+### 4.2 Tokenization
+Tokenizer:
 - `AutoTokenizer.from_pretrained(model_name, use_fast=True)`
 
-Then we apply:
-
+Tokenization settings:
 - `truncation=True`
-
 - `max_length=max_seq_length`
 
-After that, we use `map(...)` to apply the transformation to:
+Then tokenization is applied to train/val/test with `map(...)`.
 
-- train/val/test
+> **Important:** In our final experiments, we used **max_seq_length = 512** for fair comparison across models.
 
-### 4.3 Padding (Preparing Batches)
-Instead of applying static padding from the start, we used:
+### 4.3 Dynamic Padding (Batch preparation)
+We do **dynamic padding** during batching using:
 - `DataCollatorWithPadding(tokenizer=tokenizer)`
 
-This performs dynamic padding for each batch during training and evaluation.
+This avoids static padding for every sample from the start and improves efficiency.
 
-### 4.4 Loading the Model
-We used:
+### 4.4 Model Loading
+We load a pretrained Transformer for sequence classification:
 - `AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)`
 
-Because it's a binary task (0/1).
+Because it is a binary sentiment task.
 
-### 4.5 Training and Evaluation
-We configure the training using `TrainingArguments` (such as learning rate / batch size / epochs...), then we create:
+### 4.5 Training and Evaluation (Trainer)
+Training is configured using `TrainingArguments` (learning rate, batch sizes, epochs, weight decay, etc.) then we build:
 - `Trainer(...)`
 
-Finally:
-- `trainer.train()` → Starts training
-- `trainer.evaluate(val)` → Evaluates validation during training
-- `trainer.evaluate(test)` / `trainer.predict(test)` → Final evaluation on test + prediction extraction
+Main steps:
+- `trainer.train()` → training (with early stopping)
+- `trainer.evaluate(val)` → validation evaluation during training
+- `trainer.evaluate(test)` → final evaluation on test (main report results)
 
----
-
-## 5) These four concepts appear practically within training:
-
-1) **Iteration (One Weight Update)**
-Each batch goes through forward → loss → backward → weight update. This happens automatically within `Trainer`.
-
-2) **Batch**
-
-Controlled from the command line:
-
-- `--train_batch_size`
-
-- `--eval_batch_size`
-
-3) **Early Stopping**
-
-Implemented via:
-
+Early stopping:
 - `EarlyStoppingCallback(...)`
 
-Stops training if validation performance (as determined by F1) does not improve for a specified number of epochs.
-
-4) **Dropout**
-
-Inherent by default in BERT/DistilBERT architectures.
-
-You can (optionally) test it via:
-
-- `--dropout 0.2`
-
-However, in our current testing, we left it at the default (dropout = null in config).
+The “best model” is selected based on:
+- `metric_for_best_model="f1"`
+- `load_best_model_at_end=True`
 
 ---
 
-## 6) Experiments We Carried Out (Run1 and Run2) + Results
-We conducted two basic experiments to compare a lightweight model versus a larger one:
+## 5) Concepts Demonstrated in Training
 
-### 6.1 Experiment 1: DistilBERT (run1_distilbert)
+1) **Iteration (One Weight Update)**  
+Each batch: forward → loss → backward → optimizer step (handled internally by `Trainer`).
+
+2) **Batch Size**  
+Controlled from CLI:
+- `--train_batch_size`
+- `--eval_batch_size`
+
+3) **Early Stopping**  
+Stops training if validation F1 does not improve for a specified patience:
+- `--early_stopping_patience 2` (used in our runs)
+
+4) **Dropout Experiment**  
+Dropout exists by default in Transformer architectures.  
+We tested an explicit override using:
+- `--dropout 0.2`
+Or we left it unset to keep default dropout (null).
+
+---
+
+## 6) Outputs (Where results are saved)
+For each run, the script saves:
+- `outputs/<run_name>/metrics.json`  
+  Contains validation/test metrics (accuracy/precision/recall/f1) + runtime and configuration.
+
+- `outputs/<run_name>/confusion_matrix.csv`  
+  Confusion matrix values for the test split.
+
+- `outputs/<run_name>/misclassified.csv`  
+  Samples where prediction != true label (used for error analysis).
+
+A combined comparison table is saved/appended to:
+- `results/summary.csv`  
+  (one row per run)
+
+---
+
+## 7) Final Experiments We Ran (4 Runs) + Test Results
+
+We ran **4 configurations** (2 models × 2 dropout settings) using:
+- `max_seq_length = 512`
+- early stopping patience = 2
+- epochs = 5
+- learning rate = 2e-5
+- weight decay = 0.01
+- val_ratio = 0.1
+
+### 7.1 Run A — DistilBERT (dropout = 0.2)
 - Model: `distilbert-base-uncased`
-- max_seq_length = 256
 - train_batch_size = 16
 - eval_batch_size = 32
-- learning_rate = 2e-5
-- weight_decay = 0.01
-- val_ratio = 0.1
-- early_stopping_patience = 2
+- dropout = 0.2
 
-**Validation Results**
-- Accuracy = 0.9092
-- F1 = 0.90996
+**Test Confusion Matrix**
+- TN=11296, FP=1204
+- FN=599,  TP=11901
 
-**Test Results**
-- Accuracy = 0.9132
-- Precision = 0.90163
-- Recall = 0.9276
-- F1 = 0.91443
-- Training time ≈ 2486 seconds
+**Test Metrics**
+- Accuracy = **0.92788**
+- Precision = **0.90813**
+- Recall = **0.95208**
+- F1 = **0.92958**
 
-### 6.2 Second Experiment: BERT (run2_bert)
+---
+
+### 7.2 Run B — DistilBERT (dropout = null / default)
+- Model: `distilbert-base-uncased`
+- train_batch_size = 16
+- eval_batch_size = 32
+- dropout = default (null)
+
+**Test Confusion Matrix**
+- TN=11644, FP=856
+- FN=868,  TP=11632
+
+**Test Metrics**
+- Accuracy = **0.93104**
+- Precision = **0.93145**
+- Recall = **0.93056**
+- F1 = **0.93101**
+
+---
+
+### 7.3 Run C — BERT (dropout = 0.2)
 - Model: `bert-base-uncased`
-- max_seq_length = 256
 - train_batch_size = 8
 - eval_batch_size = 16
-- learning_rat
+- dropout = 0.2
+
+**Test Confusion Matrix**
+- TN=11617, FP=883
+- FN=715,  TP=11785
+
+**Test Metrics**
+- Accuracy = **0.93608**
+- Precision = **0.93030**
+- Recall = **0.94280**
+- F1 = **0.93651**
+
+---
+
+### 7.4 Run D — BERT (dropout = null / default)
+- Model: `bert-base-uncased`
+- train_batch_size = 8
+- eval_batch_size = 16
+- dropout = default (null)
+
+**Test Confusion Matrix**
+- TN=11617, FP=883
+- FN=715,  TP=11785
+
+**Test Metrics**
+- Accuracy = **0.93608**
+- Precision = **0.93030**
+- Recall = **0.94280**
+- F1 = **0.93651**
+
+> Note: BERT results for dropout=0.2 and dropout=default came out identical in our saved outputs. This should be mentioned in the report as a point to verify whether dropout override applied as intended.
+
+---
+
+## 8) Reproducibility: Example Commands
+
+### DistilBERT (dropout = null)
+```bash
+python imdb_train.py \
+  --model_name distilbert-base-uncased \
+  --max_seq_length 512 \
+  --train_batch_size 16 \
+  --eval_batch_size 32 \
+  --learning_rate 2e-5 \
+  --weight_decay 0.01 \
+  --num_train_epochs 5 \
+  --val_ratio 0.1 \
+  --early_stopping_patience 2 \
+  --run_name distilbert_null
